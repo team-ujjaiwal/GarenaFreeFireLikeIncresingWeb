@@ -25,7 +25,7 @@ app = Flask(__name__)
 client = MongoClient("mongodb+srv://ujjaiwal:42ra00dhE@cluster0.lhdnm08.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
 
 # ✅ Replace 'yourdb' with actual database name (choose your own)
-db = client["garenafreefire"]  # You can name it whatever you like
+db = client["Ff's Org - 2025-07-29"]  # You can name it whatever you like
 keys_collection = db.api_keys
 
 # Initialize scheduler for daily reset
