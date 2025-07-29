@@ -22,10 +22,10 @@ import atexit
 app = Flask(__name__)
 
 # ✅ Corrected MongoDB connection
-client = MongoClient("mongodb+srv://ujjaiwal:42ra00dhE@cluster0.lhdnm08.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
+client = MongoClient("mongodb+srv://bajrang:bajiro11@cluster0.qdcf3o3.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
 
 # ✅ Replace 'yourdb' with actual database name (choose your own)
-db = client["Ff's Org - 2025-07-29"]  # You can name it whatever you like
+db = client["garenafreefire"]  # You can name it whatever you like
 keys_collection = db.api_keys
 
 # Initialize scheduler for daily reset
