@@ -21,9 +21,8 @@ import atexit
 
 app = Flask(__name__)
 
-# MongoDB configuration
-client = MongoClient("mongodb+srv://<username>:<password>@<cluster>.mongodb.net/<dbname>?retryWrites=true&w=majority")
-db = client.yourdb
+client = MongoClient("mongodb+srv://ujjaiwal:42ra00dhE@ff.mongodb.net/garenafreefire?retryWrites=true&w=majority")
+db = client.garenafreefire
 keys_collection = db.api_keys
 
 # Initialize scheduler for daily reset
