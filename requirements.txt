@@ -1,5 +1,5 @@
-Flask[async
-pymongo]
+Flask[async]
+pymongo
 requests
 aiohttp
 googleapis-common-protos
