@@ -22,7 +22,7 @@ import atexit
 app = Flask(__name__)
 
 # ✅ Corrected MongoDB connection
-client = MongoClient("mongodb+srv://bajrang:bajiro11@cluster0.qdcf3o3.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
+client = MongoClient("mongodb+srv://ujjaiwal:42ra00dhE@cluster0.lhdnm08.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
 
 # ✅ Replace 'yourdb' with actual database name (choose your own)
 db = client["garenafreefire"]  # You can name it whatever you like
@@ -267,7 +267,7 @@ def update_key_usage(api_key, decrement=1):
     except Exception as e:
         app.logger.error(f"Error updating key usage: {e}")
 
-@app.route('/api/key/create', methods=['POST'])
+@app.route('/create-key', methods=['POST'])
 def create_key():
     try:
         data = request.get_json()
@@ -310,7 +310,7 @@ def create_key():
         app.logger.error(f"Error creating API key: {e}")
         return jsonify({"error": str(e)}), 500
 
-@app.route('/api/key/check', methods=['GET'])
+@app.route('/check-key', methods=['GET'])
 def check_key():
     """Check the status and details of an API key"""
     try:
@@ -340,7 +340,7 @@ def check_key():
         app.logger.error(f"Error checking API key: {e}")
         return jsonify({"error": str(e)}), 500
 
-@app.route('/api/key/remove', methods=['DELETE'])
+@app.route('/remove-key', methods=['DELETE'])
 def remove_key():
     """Remove an API key (mark as inactive)"""
     try:
@@ -367,7 +367,7 @@ def remove_key():
         app.logger.error(f"Error removing API key: {e}")
         return jsonify({"error": str(e)}), 500
 
-@app.route('/api/key/update', methods=['PUT'])
+@app.route('/update-key', methods=['PUT'])
 def update_key():
     """Update an API key's properties"""
     try:
@@ -442,9 +442,9 @@ def handle_requests():
         }), 429
     
     uid = request.args.get("uid")
-    server_name = request.args.get("server_name", "").upper()
+    server_name = request.args.get("region", "").upper()
     if not uid or not server_name:
-        return jsonify({"error": "UID and server_name are required"}), 400
+        return jsonify({"error": "UID and region are required"}), 400
 
     try:
         def process_request():
