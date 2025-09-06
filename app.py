@@ -12,47 +12,64 @@ import like_count_pb2
 import uid_generator_pb2
 from google.protobuf.message import DecodeError
 from datetime import datetime, timedelta
-from pymongo import MongoClient
-from bson.objectid import ObjectId
 import secrets
 import string
 from apscheduler.schedulers.background import BackgroundScheduler
 import atexit
+import os
 
 app = Flask(__name__)
 
-# ✅ Corrected MongoDB connection
-client = MongoClient("mongodb+srv://bajrang:bajiro11@cluster0.qdcf3o3.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
-
-# ✅ Replace 'yourdb' with actual database name (choose your own)
-db = client["garenafreefire"]  # You can name it whatever you like
-keys_collection = db.api_keys
+# JSON file path for storing API keys
+KEY_FILE_PATH = "/storage/emulated/0/f/0/key.json"
 
 # Initialize scheduler for daily reset
 scheduler = BackgroundScheduler(daemon=True)
 scheduler.start()
 atexit.register(lambda: scheduler.shutdown())
 
+def load_keys():
+    """Load API keys from JSON file"""
+    try:
+        if os.path.exists(KEY_FILE_PATH):
+            with open(KEY_FILE_PATH, 'r') as f:
+                return json.load(f)
+        return []
+    except Exception as e:
+        app.logger.error(f"Error loading keys: {e}")
+        return []
+
+def save_keys(keys):
+    """Save API keys to JSON file"""
+    try:
+        with open(KEY_FILE_PATH, 'w') as f:
+            json.dump(keys, f, default=str, indent=4)
+        return True
+    except Exception as e:
+        app.logger.error(f"Error saving keys: {e}")
+        return False
+
 def reset_remaining_requests():
     """Reset remaining requests for all active keys to their total_requests"""
     try:
         now = datetime.now()
-        active_keys = keys_collection.find({
-            "is_active": True,
-            "expires_at": {"$gt": now}
-        })
+        keys = load_keys()
+        updated = False
         
-        for key in active_keys:
-            keys_collection.update_one(
-                {"_id": key["_id"]},
-                {
-                    "$set": {
-                        "remaining_requests": key["total_requests"],
-                        "last_reset": now
-                    }
-                }
-            )
-        app.logger.info(f"Successfully reset requests at {now}")
+        for key in keys:
+            if key.get('is_active', True) and 'expires_at' in key:
+                expires_at = key['expires_at']
+                if isinstance(expires_at, str):
+                    expires_at = datetime.fromisoformat(expires_at)
+                
+                if expires_at > now:
+                    key['remaining_requests'] = key['total_requests']
+                    key['last_reset'] = now
+                    updated = True
+        
+        if updated:
+            save_keys(keys)
+            app.logger.info(f"Successfully reset requests at {now}")
     except Exception as e:
         app.logger.error(f"Error in reset_remaining_requests: {e}")
 
@@ -216,40 +233,37 @@ def decode_protobuf(binary):
 def authenticate_key(api_key):
     """Check if API key exists and is valid"""
     try:
-        key_data = keys_collection.find_one({"key": api_key})
-        if not key_data:
-            return None
-        
-        # Check expiration
-        now = datetime.now()
-        if 'expires_at' in key_data and now > key_data['expires_at']:
-            # Mark as inactive if expired
-            keys_collection.update_one(
-                {"key": api_key},
-                {"$set": {"is_active": False}}
-            )
-            return None
-        
-        # Check if key is active
-        if 'is_active' in key_data and not key_data['is_active']:
-            return None
-        
-        # Check if we need to reset remaining requests (new day)
-        if 'last_reset' in key_data:
-            last_reset = key_data['last_reset']
-            if isinstance(last_reset, str):
-                last_reset = datetime.fromisoformat(last_reset)
-            if last_reset.date() < now.date():
-                keys_collection.update_one(
-                    {"key": api_key},
-                    {"$set": {
-                        "remaining_requests": key_data['total_requests'],
-                        "last_reset": now
-                    }}
-                )
-                key_data['remaining_requests'] = key_data['total_requests']
-        
-        return key_data
+        keys = load_keys()
+        for key_data in keys:
+            if key_data.get('key') == api_key:
+                # Check expiration
+                now = datetime.now()
+                expires_at = key_data.get('expires_at')
+                if expires_at:
+                    if isinstance(expires_at, str):
+                        expires_at = datetime.fromisoformat(expires_at)
+                    if now > expires_at:
+                        # Mark as inactive if expired
+                        key_data['is_active'] = False
+                        save_keys(keys)
+                        return None
+                
+                # Check if key is active
+                if not key_data.get('is_active', True):
+                    return None
+                
+                # Check if we need to reset remaining requests (new day)
+                last_reset = key_data.get('last_reset')
+                if last_reset:
+                    if isinstance(last_reset, str):
+                        last_reset = datetime.fromisoformat(last_reset)
+                    if last_reset.date() < now.date():
+                        key_data['remaining_requests'] = key_data['total_requests']
+                        key_data['last_reset'] = now
+                        save_keys(keys)
+                
+                return key_data
+        return None
     except Exception as e:
         app.logger.error(f"Error in authenticate_key: {e}")
         return None
@@ -257,13 +271,13 @@ def authenticate_key(api_key):
 def update_key_usage(api_key, decrement=1):
     """Decrement remaining requests count for a key only when likes are given"""
     try:
-        keys_collection.update_one(
-            {"key": api_key},
-            {
-                "$inc": {"remaining_requests": -decrement},
-                "$set": {"last_used": datetime.now()}
-            }
-        )
+        keys = load_keys()
+        for key in keys:
+            if key.get('key') == api_key:
+                key['remaining_requests'] = max(0, key.get('remaining_requests', 0) - decrement)
+                key['last_used'] = datetime.now()
+                save_keys(keys)
+                break
     except Exception as e:
         app.logger.error(f"Error updating key usage: {e}")
 
@@ -276,9 +290,13 @@ def create_key():
         expiry_days = int(data.get('expiry_days', 30))
         notes = data.get('notes', '')
         
+        keys = load_keys()
+        
         if custom_key:
-            if keys_collection.find_one({"key": custom_key}):
-                return jsonify({"error": "Custom key already exists"}), 400
+            # Check if custom key already exists
+            for key in keys:
+                if key.get('key') == custom_key:
+                    return jsonify({"error": "Custom key already exists"}), 400
             api_key = custom_key
         else:
             alphabet = string.ascii_letters + string.digits
@@ -297,7 +315,8 @@ def create_key():
             "last_reset": datetime.now()
         }
         
-        keys_collection.insert_one(key_doc)
+        keys.append(key_doc)
+        save_keys(keys)
         
         return jsonify({
             "message": "API key created successfully",
@@ -321,9 +340,6 @@ def check_key():
         key_data = authenticate_key(api_key)
         if not key_data:
             return jsonify({"error": "Invalid or expired API key"}), 403
-        
-        # Remove MongoDB-specific fields before returning
-        key_data.pop('_id', None)
         
         # Convert datetime objects to strings
         if 'created_at' in key_data and isinstance(key_data['created_at'], datetime):
@@ -353,13 +369,13 @@ def remove_key():
         if not key_data:
             return jsonify({"error": "Invalid or expired API key"}), 403
         
-        # Mark the key as inactive instead of deleting it
-        result = keys_collection.update_one(
-            {"key": api_key},
-            {"$set": {"is_active": False}}
-        )
+        keys = load_keys()
+        for key in keys:
+            if key.get('key') == api_key:
+                key['is_active'] = False
+                break
         
-        if result.modified_count == 1:
+        if save_keys(keys):
             return jsonify({"message": "API key deactivated successfully"}), 200
         else:
             return jsonify({"error": "Failed to deactivate API key"}), 400
@@ -387,9 +403,6 @@ def update_key():
             try:
                 total_requests = int(data['total_requests'])
                 update_fields['total_requests'] = total_requests
-                # Also update remaining_requests if increasing total_requests
-                if total_requests > key_data.get('total_requests', 0):
-                    update_fields['remaining_requests'] = total_requests - (key_data.get('total_requests', 0) - key_data.get('remaining_requests', 0))
             except ValueError:
                 return jsonify({"error": "total_requests must be an integer"}), 400
         
@@ -410,12 +423,16 @@ def update_key():
         if not update_fields:
             return jsonify({"error": "No valid fields to update"}), 400
         
-        result = keys_collection.update_one(
-            {"key": api_key},
-            {"$set": update_fields}
-        )
+        keys = load_keys()
+        updated = False
+        for key in keys:
+            if key.get('key') == api_key:
+                for field, value in update_fields.items():
+                    key[field] = value
+                updated = True
+                break
         
-        if result.modified_count == 1:
+        if updated and save_keys(keys):
             return jsonify({"message": "API key updated successfully"}), 200
         else:
             return jsonify({"error": "No changes made to API key"}), 400
